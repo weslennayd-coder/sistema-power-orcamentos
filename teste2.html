@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema POWER - Orçamentos</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root { --primary: #004aad; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); margin: 0; display: flex; flex-direction: column; }
+        
+        /* Layout Responsivo */
+        .sidebar { width: 250px; background: var(--primary); color: white; height: 100vh; position: fixed; padding: 20px; box-sizing: border-box; z-index: 100; }
+        .main-content { margin-left: 250px; padding: 20px; width: calc(100% - 250px); box-sizing: border-box; }
+
+        @media (max-width: 768px) {
+            .sidebar { width: 100%; height: auto; position: relative; padding: 10px; display: flex; flex-wrap: wrap; justify-content: space-around; }
+            .sidebar h2 { width: 100%; text-align: center; font-size: 1.2rem; margin: 10px 0; }
+            .nav-link { font-size: 0.8rem; padding: 8px; margin: 2px; }
+            .main-content { margin-left: 0; width: 100%; padding: 15px; }
+            .grid { grid-template-columns: 1fr !important; gap: 5px; } /* Itens ficam um abaixo do outro no mobile */
+        }
+
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .nav-link { display: block; color: white; text-decoration: none; padding: 12px; margin: 5px 0; border-radius: 5px; cursor: pointer; transition: 0.3s; }
+        .nav-link:hover { background: rgba(255,255,255,0.1); }
+        
+        .grid { display: grid; grid-template-columns: 3fr 1fr 1fr; gap: 10px; }
+        input, select { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 16px; } /* Fonte 16px evita zoom automático no iOS */
+
+        /* CONFIGURAÇÃO DO PDF */
+        #pdf-template { width: 210mm; height: 297mm; padding: 15mm; background: white; display: none; color: #333; box-sizing: border-box; position: relative; }
+        .pdf-header { border-bottom: 2px solid var(--primary); display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 10px; align-items: flex-end;}
+        .pdf-logo { max-height: 55px; }
+        .pdf-client-box { border: 1px solid #eee; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .pdf-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .pdf-table th { background: var(--primary); color: white; padding: 10px; text-align: left; font-size: 11px; }
+        .pdf-table td { border-bottom: 1px solid #eee; padding: 10px; font-size: 11px; }
+        .pdf-total-box { margin-left: auto; width: 220px; }
+        .total-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; }
+        .total-geral { border-top: 2px solid var(--primary); font-size: 14px; font-weight: bold; color: var(--primary); }
+
+        .btn { padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-save { background: #27ae60; color: white; }
+        .btn-add { background: var(--primary); color: white; margin-top: 10px; }
+        .btn-wpp { background: #25d366; color: white; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>POWER Admin</h2>
+    <div class="nav-link" onclick="showSection('perfil')">⚙️ Perfil</div>
+    <div class="nav-link" onclick="showSection('clientes')">👥 Clientes</div>
+    <div class="nav-link" onclick="showSection('gerar')">📄 Novo Orçamento</div>
+</div>
+
+<div class="main-content">
+    <div id="sec-perfil" class="section card">
+        <h3>Minha Empresa</h3>
+        <input type="text" id="emp-nome" placeholder="Nome da Empresa">
+        <input type="text" id="emp-cnpj" placeholder="CNPJ">
+        <input type="text" id="emp-tel" placeholder="Telefone">
+        <input type="text" id="emp-end" placeholder="Endereço">
+        <label>Logo:</label>
+        <input type="file" id="emp-logo-input" accept="image/*" onchange="previewLogo(event)">
+        <button class="btn btn-save" style="width:100%" onclick="saveEmpresa()">Salvar Configurações</button>
+    </div>
+
+    <div id="sec-clientes" class="section card hidden">
+        <h3>Cadastrar Cliente</h3>
+        <input type="text" id="cli-nome" placeholder="Nome do Cliente">
+        <input type="text" id="cli-end" placeholder="Endereço">
+        <input type="text" id="cli-tel" placeholder="WhatsApp">
+        <button class="btn btn-add" style="width:100%" onclick="saveCliente()">Salvar Cliente</button>
+        <hr>
+        <div id="lista-clientes"></div>
+    </div>
+
+    <div id="sec-gerar" class="section card hidden">
+        <h3>Novo Orçamento</h3>
+        <label>Cliente:</label>
+        <input list="lista-sugestoes-clientes" id="select-cliente" placeholder="Nome ou selecione...">
+        <datalist id="lista-sugestoes-clientes"></datalist>
+        
+        <div id="items-container" style="margin-top:15px;">
+            <div class="grid">
+                <input type="text" class="i-desc" placeholder="Serviço/Produto">
+                <input type="number" class="i-qty" placeholder="Qtd" value="1">
+                <input type="number" class="i-unit" placeholder="Preço R$">
+            </div>
+        </div>
+        <button class="btn btn-add" onclick="addItem()">+ Adicionar Linha</button>
+        
+        <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px;">
+            <label>Desconto (%):</label>
+            <input type="number" id="input-desconto" value="0">
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+            <button class="btn btn-save" onclick="prepararPDF(true)">BAIXAR PDF</button>
+            <button class="btn btn-wpp" onclick="enviarWhatsapp()">ENVIAR WHATSAPP</button>
+        </div>
+    </div>
+
+    <div id="pdf-template">
+        <div class="pdf-header">
+            <div>
+                <img id="pdf-logo-img" class="pdf-logo" src="" style="display:none;">
+                <h1 id="pdf-emp-nome" style="margin:0; font-size: 22px; color:var(--primary);"></h1>
+                <p id="pdf-emp-dados" style="font-size:10px; margin:5px 0;"></p>
+            </div>
+            <div style="text-align:right">
+                <h2 style="color:#ddd; font-size:24px; margin:0; font-weight:900;">ORÇAMENTO</h2>
+                <p style="font-size:10px;">Emissão: <span id="pdf-data"></span></p>
+            </div>
+        </div>
+        <div class="pdf-client-box">
+            <strong>DADOS DO CLIENTE</strong>
+            <p><strong>Nome:</strong> <span id="pdf-cli-nome"></span></p>
+            <p><strong>Endereço:</strong> <span id="pdf-cli-end"></span></p>
+            <p><strong>WhatsApp:</strong> <span id="pdf-cli-tel"></span></p>
+        </div>
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th>DESCRIÇÃO</th>
+                    <th style="width:40px">QTD</th>
+                    <th>UNIT.</th>
+                    <th>TOTAL</th>
+                </tr>
+            </thead>
+            <tbody id="pdf-itens"></tbody>
+        </table>
+        <div class="pdf-total-box">
+            <div class="total-row"><span>Subtotal:</span> <span id="pdf-sub"></span></div>
+            <div class="total-row" id="pdf-row-desconto" style="color:red"><span>Desconto:</span> <span id="pdf-desc-valor"></span></div>
+            <div class="total-row total-geral"><span>Total Geral:</span> <span id="pdf-total"></span></div>
+        </div>
+        <div style="margin-top:30px; font-size:10px;">
+            <strong>Observações:</strong> Validade 30 dias.
+        </div>
+    </div>
+</div>
+
+<script>
+    let empresa = JSON.parse(localStorage.getItem('empresa')) || {nome: "POWER | Tecnologia", tel: ""};
+    let clientes = JSON.parse(localStorage.getItem('clientes')) || [];
+    let logoBase64 = localStorage.getItem('logo') || "";
+
+    function showSection(id) {
+        document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+        document.getElementById('sec-' + id).classList.remove('hidden');
+        if(id === 'gerar') carregarSelectClientes();
+        if(id === 'clientes') renderListaClientes();
+    }
+
+    function saveEmpresa() {
+        empresa = {
+            nome: document.getElementById('emp-nome').value,
+            cnpj: document.getElementById('emp-cnpj').value,
+            tel: document.getElementById('emp-tel').value,
+            end: document.getElementById('emp-end').value
+        };
+        localStorage.setItem('empresa', JSON.stringify(empresa));
+        alert("Configurações salvas!");
+    }
+
+    function previewLogo(event) {
+        const reader = new FileReader();
+        reader.onload = () => { logoBase64 = reader.result; localStorage.setItem('logo', logoBase64); };
+        reader.readAsDataURL(event.target.files[0]);
+    }
+
+    function saveCliente() {
+        clientes.push({ 
+            nome: document.getElementById('cli-nome').value, 
+            end: document.getElementById('cli-end').value,
+            tel: document.getElementById('cli-tel').value 
+        });
+        localStorage.setItem('clientes', JSON.stringify(clientes));
+        alert("Cliente salvo!");
+        document.getElementById('cli-nome').value = '';
+        renderListaClientes();
+    }
+
+    function renderListaClientes() {
+        document.getElementById('lista-clientes').innerHTML = clientes.map(c => `<p style="font-size:13px; border-bottom:1px solid #eee; padding:8px;">• ${c.nome}</p>`).join('');
+    }
+
+    function carregarSelectClientes() {
+        document.getElementById('lista-sugestoes-clientes').innerHTML = clientes.map(c => `<option value="${c.nome}">`).join('');
+    }
+
+    function addItem() {
+        const div = document.createElement('div');
+        div.className = 'grid'; div.style.marginTop = "10px";
+        div.innerHTML = `<input type="text" class="i-desc" placeholder="Descrição"><input type="number" class="i-qty" value="1"><input type="number" class="i-unit" placeholder="R$">`;
+        document.getElementById('items-container').appendChild(div);
+    }
+
+    function prepararPDF(download = true) {
+        const nomeCli = document.getElementById('select-cliente').value;
+        if(!nomeCli) return alert("Informe o cliente!");
+
+        const cli = clientes.find(c => c.nome === nomeCli) || { nome: nomeCli, end: "---", tel: "" };
+        
+        document.getElementById('pdf-emp-nome').innerText = empresa.nome;
+        document.getElementById('pdf-emp-dados').innerText = `${empresa.cnpj || ''} | ${empresa.tel} | ${empresa.end || ''}`;
+        if(logoBase64) { const img = document.getElementById('pdf-logo-img'); img.src = logoBase64; img.style.display = "block"; }
+
+        document.getElementById('pdf-cli-nome').innerText = cli.nome;
+        document.getElementById('pdf-cli-end').innerText = cli.end;
+        document.getElementById('pdf-cli-tel').innerText = cli.tel;
+        document.getElementById('pdf-data').innerText = new Date().toLocaleDateString('pt-BR');
+
+        let subtotal = 0;
+        let html = '';
+        const descs = document.getElementsByClassName('i-desc');
+        const qtys = document.getElementsByClassName('i-qty');
+        const units = document.getElementsByClassName('i-unit');
+
+        for(let i=0; i<descs.length; i++){
+            let q = parseFloat(qtys[i].value) || 0;
+            let u = parseFloat(units[i].value) || 0;
+            subtotal += (q * u);
+            html += `<tr><td>${descs[i].value}</td><td>${q}</td><td>${u.toFixed(2)}</td><td>${(q*u).toFixed(2)}</td></tr>`;
+        }
+
+        const descPorc = parseFloat(document.getElementById('input-desconto').value) || 0;
+        const vDesc = subtotal * (descPorc/100);
+        const total = subtotal - vDesc;
+
+        document.getElementById('pdf-itens').innerHTML = html;
+        document.getElementById('pdf-sub').innerText = `R$ ${subtotal.toFixed(2)}`;
+        document.getElementById('pdf-row-desconto').style.display = vDesc > 0 ? "flex" : "none";
+        document.getElementById('pdf-desc-valor').innerText = `- R$ ${vDesc.toFixed(2)}`;
+        document.getElementById('pdf-total').innerText = `R$ ${total.toFixed(2)}`;
+
+        const element = document.getElementById('pdf-template');
+        element.style.display = "block";
+        
+        if(download){
+            const opt = { margin: 0, filename: `Orcamento_${cli.nome}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } };
+            html2pdf().set(opt).from(element).save().then(() => element.style.display = "none");
+        }
+        return { total: total.toFixed(2), cliente: cli };
+    }
+
+    function enviarWhatsapp() {
+        const d = prepararPDF(false);
+        const tel = d.cliente.tel.replace(/\D/g, '');
+        const msg = `Olá *${d.cliente.nome}*! Segue o orçamento da *${empresa.nome}*.\n*Total: R$ ${d.total}*.\nEstou enviando o PDF em seguida.`;
+        window.open(`https://api.whatsapp.com/send?phone=55${tel || ''}&text=${encodeURIComponent(msg)}`, '_blank');
+        document.getElementById('pdf-template').style.display = "none";
+    }
+
+    window.onload = () => {
+        document.getElementById('emp-nome').value = empresa.nome;
+        document.getElementById('emp-tel').value = empresa.tel;
+        document.getElementById('emp-cnpj').value = empresa.cnpj || '';
+        document.getElementById('emp-end').value = empresa.end || '';
+    };
+</script>
+</body>
+</html>
